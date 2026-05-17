@@ -90,6 +90,10 @@ if __name__ == "__main__":
     TARGET_REPO = "https://github.com/psf/requests-html" 
     
     history_json = extract_repository_history(TARGET_REPO, max_commits=200)
+
+    output_file = "mock_commits.json"
+    with open(output_file, "w", encoding="utf-8") as f:
+        json.dump(history_json, f, indent=2)
     
     # Print the clean structured JSON data to the terminal 
     print(json.dumps(history_json, indent=2))

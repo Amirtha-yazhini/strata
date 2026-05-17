@@ -15,3 +15,6 @@ Thumbs.db
 
 # Future environment variables (for API keys in Phase 2)
 .env
+
+eras.json
+mock_commits.json

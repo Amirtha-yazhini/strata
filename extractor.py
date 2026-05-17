@@ -44,11 +44,12 @@ def analyze_commit_sentiment(message: str) -> list:
 
 def extract_repository_history(repo_url: str, max_commits: int = 1000):
     """
-    Clones/opens a repository and streams out structured, high-signal commit data[cite: 16, 63, 70].
+    Clones/opens a repository and streams out structured, high-signal commit data.
     """
     cleaned_commits = []
+    global_file_stats = {}
     
-    print(f"Excavating {repo_url}... [cite: 63]")
+    print(f"Excavating {repo_url}...")
     
     # Using PyDriller's Repository mining engine [cite: 60, 63]
     # We pass a commit limit to keep local execution fast during development [cite: 17, 66]
@@ -66,6 +67,31 @@ def extract_repository_history(repo_url: str, max_commits: int = 1000):
         # Extract precise commit metrics [cite: 22]
         debt_signals = analyze_commit_sentiment(commit.msg)
         
+        commit_date = commit.author_date.isoformat()
+        author = commit.author.name
+        
+        modified_files = []
+        for mod in commit.modified_files:
+            file_path = mod.new_path or mod.old_path
+            if not file_path: continue
+            
+            modified_files.append(file_path)
+            
+            if file_path not in global_file_stats:
+                global_file_stats[file_path] = {
+                    "created_at": commit_date,
+                    "last_modified": commit_date,
+                    "authors": {}
+                }
+            
+            # Since we traverse in reverse (newest to oldest), the *first* time we see a file is its newest commit
+            global_file_stats[file_path]["created_at"] = commit_date # will eventually hold the oldest date
+            if "last_modified_set" not in global_file_stats[file_path]:
+                global_file_stats[file_path]["last_modified"] = commit_date
+                global_file_stats[file_path]["last_modified_set"] = True
+                
+            global_file_stats[file_path]["authors"][author] = global_file_stats[file_path]["authors"].get(author, 0) + 1
+        
         commit_data = {
             "sha": commit.hash,
             "author": commit.author.name,
@@ -76,13 +102,25 @@ def extract_repository_history(repo_url: str, max_commits: int = 1000):
             "lines_removed": commit.deletions,
             "files_changed_count": commit.files,
             "has_debt_signals": len(debt_signals) > 0,
-            "debt_keywords": list(set([kw.lower() for kw in debt_signals]))
+            "debt_keywords": list(set([kw.lower() for kw in debt_signals])),
+            "modified_files": modified_files
         }
         
         cleaned_commits.append(commit_data)
         count += 1
 
-    return cleaned_commits
+    # Finalize bus factor calculations
+    for path, stats in global_file_stats.items():
+        total_commits = sum(stats["authors"].values())
+        max_commits_by_one = max(stats["authors"].values()) if stats["authors"] else 0
+        stats["bus_factor_risk"] = (max_commits_by_one / total_commits) >= 0.8 if total_commits > 0 else False
+        if "last_modified_set" in stats:
+            del stats["last_modified_set"]
+
+    return {
+        "commits": cleaned_commits,
+        "file_stats": global_file_stats
+    }
 
 if __name__ == "__main__":
     # Test on a small, fast public repo [cite: 66]

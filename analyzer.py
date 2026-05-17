@@ -79,13 +79,45 @@ def run_reduce_pass(summaries):
     final_eras = reduce_chain.invoke({"combined_summaries": "\n\n--- Next Layer Summary ---\n\n".join(summaries)})
     return final_eras
 
+def run_survival_guide_pass(eras):
+    """
+    Step 3: Generate a New Hire Survival Guide based on the synthesized eras.
+    """
+    print("Starting Survival Guide Pass: Writing the onboarding artifact...")
+    
+    guide_prompt = ChatPromptTemplate.from_template(
+        "You are a master staff engineer writing a 'New Hire Survival Guide' for a software repository. "
+        "You are given the chronological history of the codebase broken down into 'Eras'.\n\n"
+        "Your task is to synthesize this history into a highly technical, witty, and practical Markdown guide. "
+        "Include the following sections:\n"
+        "1. **Welcome to the Dig Site**: A brief, engaging introduction.\n"
+        "2. **The Tech Stack Evolution**: How the architecture changed over time.\n"
+        "3. **Known Tech Debt & Dragons**: Areas of the code that are notoriously complex or legacy.\n"
+        "4. **Where to Start**: Actionable advice for a new engineer making their first commit.\n\n"
+        "Eras JSON Data:\n{eras_data}\n\n"
+        "Output strictly valid Markdown without any wrapper JSON or code block formatting like ```markdown."
+    )
+    
+    guide_chain = guide_prompt | llm
+    
+    # We pass the JSON string of eras directly to the LLM
+    response = guide_chain.invoke({"eras_data": json.dumps(eras, indent=2)})
+    return response.content
+
 def analyze_codebase_history(extracted_json_path):
     """
     Main orchestration loop for Phase 2.
     """
     # 1. Load the data extracted from Phase 1
     with open(extracted_json_path, 'r') as f:
-        all_commits = json.load(f)
+        data = json.load(f)
+        
+    if isinstance(data, dict) and "commits" in data:
+        all_commits = data["commits"]
+        file_stats = data.get("file_stats", {})
+    else:
+        all_commits = data
+        file_stats = {}
     
     # Reverse so we analyze from oldest commit to newest commit (chronological alignment)
     all_commits.reverse()
@@ -99,7 +131,14 @@ def analyze_codebase_history(extracted_json_path):
     # 4. Reduce Pass
     historical_eras = run_reduce_pass(chunk_summaries)
     
-    return historical_eras
+    # 5. Survival Guide Pass
+    survival_guide = run_survival_guide_pass(historical_eras)
+    
+    return {
+        "eras": historical_eras,
+        "survival_guide": survival_guide,
+        "file_stats": file_stats
+    }
 
 if __name__ == "__main__":
     # Point this to a test file generated from Phase 1 data
